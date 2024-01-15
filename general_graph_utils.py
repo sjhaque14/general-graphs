@@ -145,6 +145,8 @@ def get_labels(G):
     
     return label_dict, label_list
 
+#Cycle information
+
 def get_cycle_nodes(G_ud):
     """
     Returns a list of the cycles which form a basis G (must be undirected). Each element is a list of the nodes connected in a given cycle.

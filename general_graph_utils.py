@@ -5,15 +5,15 @@ import scipy.linalg
 
 # general-graph-utils.py
 
-# This library allows the user to greate linear framework graphs (finite, directed graphs with no self-loops and labeled edges). The user can randomly generate a strongly connected and reversible linear framework graph G, calculate its Laplacian matrix and its spectrum, and calculate the Steinberg signature from that matrix. The user can also determine how the Steinberg signature changes as a function of increasing entropy production. This software was developed using the NetworkX software package. For more information abpout NetworkX, see https://networkx.org/documentation/stable/index.html
+# This library allows the user to greate linear framework graphs (finite, simple, directed graphs with labeled edges). The user can randomly generate a strongly connected and reversible linear framework graph G, calculate its Laplacian matrix and its spectrum, and calculate the Steinberg signature from that matrix. The user can also determine how the Steinberg signature changes as a function of increasing entropy production. This software was developed using the NetworkX software package. For more information abpout NetworkX, see https://networkx.org/documentation/stable/index.html
 
-# Note that the user is required to create both a directed graph object and an undirected graph object. This is because some of the functions in this file require the undirected graph object as an argument (particular the cycle-related functions). For the most part, however, the user can use a directed graph object 
+# Note that the user is required to create both a directed graph object and an undirected graph object. This is because some of the functions in this file require the undirected graph object as an argument (particular the cycle-related functions). For the most part, however, the user can use a directed graph object.
 
 ## RANDOM GENERATION OF LINEAR FRAMEWORK GRAPHS ##
 
 def random_graph(n):
     """
-    Randomly generates a linear framework graph -- a finite, directed graph with no self-loops -- that is strongly connected and fully reversible. The size of the graph is randomly determined from range (3, n), and the edges are added by randomly selecting a pair of nodes in G.
+    Generates a linear framework graph -- a finite, simple directed graph -- with a random structure (with the conditions that it is strongly connected and fully reversible). The size of the graph is randomly determined from range (3, n). Reversible edges are assigned between randomly chosen pairs of nodes until the graph is strongly connected.
     
     Parameters
     ----------
@@ -56,7 +56,9 @@ def random_graph(n):
     
     return G, G_ud
 
-# OBTAINING STRUCTURAL INFORMATION FROM G ##
+## OBTAINING STRUCTURAL INFORMATION FROM G ##
+
+
 
 def get_nodes(G):
     """

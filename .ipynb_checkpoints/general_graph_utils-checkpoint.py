@@ -3,15 +3,13 @@ import matplotlib.pyplot as plt
 import numpy as np
 import scipy.linalg
 
-###################################
 # general-graph-utils.py
-# This library allows the user to create linear framework graphs (finite, directed graphs with no self-loops and labeled edges), as well as useful data structures containing structural and topological information about the graph. The library also allows a user to obtain thermodynamic information about the graph (e.g. the thermodynamic force of a cycle) and calculate the Steinberg signature. This software was developed using the NetworkX software package. For more information abpout NetworkX, see https://networkx.org/documentation/stable/index.html
-###################################
 
+# This library allows the user to greate linear framework graphs (finite, directed graphs with no self-loops and labeled edges). The user can randomly generate a strongly connected and reversible linear framework graph G, calculate its Laplacian matrix and its spectrum, and calculate the Steinberg signature from that matrix. The user can also determine how the Steinberg signature changes as a function of increasing entropy production. This software was developed using the NetworkX software package. For more information abpout NetworkX, see https://networkx.org/documentation/stable/index.html
 
-###################################
-# Random generation of linear framework graphs
-###################################
+# Note that the user is required to create both a directed graph object and an undirected graph object. This is because some of the functions in this file require the undirected graph object as an argument (particular the cycle-related functions). For the most part, however, the user can use a directed graph object 
+
+## RANDOM GENERATION OF LINEAR FRAMEWORK GRAPHS ##
 
 def random_graph(n):
     """
@@ -58,9 +56,7 @@ def random_graph(n):
     
     return G, G_ud
 
-###################################
-# Obtaining structural information from linear framework graphs
-###################################
+# OBTAINING STRUCTURAL INFORMATION FROM G ##
 
 def get_nodes(G):
     """
@@ -76,47 +72,9 @@ def get_edges(G):
     """
     return np.array(G.edges)
 
-# def get_weights(G,max_val=100):
-#     """
-#     Extracts the weight information for each edge in a NetworkX graph object. If G unweighted, weights are randomly sampled.
-    
-#     Note: works for undirected graph, but if given a choice, better to use a directed graph
-    
-#     Parameters
-#     ----------
-#     G : NetworkX graph object (directed)
-    
-#     max_val : scalar, optional
-#         upper bound of sampling range, default = 100
-        
-#     Returns
-#     -------
-#     weight_dict : dictionary
-#         keys: edges in G represented as tuple (source,sink), values: edge weights
-        
-#     weight_list : 1D numpy array
-#         list of edge weights in G
-        
-#     """
-    
-#     weight_dict = {}
-    
-#     if nx.is_weighted(G)==True:
-#         for i in range(len(G.edges())):
-#             weight_dict[list(G.edges())[i]] = G.get_edge_data(list(G.edges)[i][0],list(G.edges)[i][1])['weight']
-        
-#     elif nx.is_weighted(G)==False:
-#         weight_dict = {e: np.random.choice(max_val) for e in G.edges}
-        
-#     weight_list = np.fromiter(weight_dict.values(), dtype=float)
-    
-#     return weight_dict, weight_list
-
 def get_labels(G):
     """
-    Extracts the label information for each edge in a NetworkX graph object. If G not labeled, labels are logarithmically sampled.
-    
-    Note: works for undirected graph, but if given a choice, better to use a directed graph
+    Extracts the label information for each edge in a NetworkX graph object. If G not labeled, labels are sampled as 10^x, where x is sampled uniformly between -3 and 3. This function works for undirected graph, but if given a choice, better to use a directed graph
     
     Parameters
     ----------
@@ -144,6 +102,124 @@ def get_labels(G):
     label_list = np.fromiter(label_dict.values(), dtype=float)
     
     return label_dict, label_list
+
+
+def reformat_labels(cycle_list, cycle_labels_forward, edge_tracker, label_dict, label_list):
+    """
+    Initializes a graph with a particular parameterization in an equilibrium steady state
+    
+    Parameters
+    ----------
+    
+    cycle_list : list of lists
+        each element is a list of the nodes connected in a given cycle.
+    
+    cycle_labels_forward : list of lists
+        updated with new values for certain edges
+        
+    edge_tracker : list of lists
+        list of edges with labels that were changed to initialize the system in an equilibrium steady state
+        
+    label_dict : dictionary
+        keys: edges in G represented as tuple (source,sink), values: edge labels
+        
+    label_list : 1D numpy array
+        list of edge labels in G
+    
+    Returns
+    -------
+    
+    label_dict : dictionary
+        keys: edges in G represented as tuple (source,sink), values: edge labels (updated with equilibrium changes)
+        
+    label_list : 1D numpy array
+        list of edge labels in G (updated with equilibrium changes
+    """
+    
+    num_cycles = len(cycle_list)
+    
+    for i in range(num_cycles):
+        label_dict[edge_tracker[i]] = cycle_labels_forward[i][0]
+        
+    label_list = np.fromiter(label_dict.values(), dtype=float)
+    
+    return label_dict, label_list
+
+# CALCULATING THE LAPLACIAN ##
+
+def Laplacian_all(edge_list,label_list,node_list):
+    """
+    Calculates the Laplacian matrix for any graph. The entries of the Laplacian are computed using the following mathematical formula:
+    
+    L_{ij}(G) = e_{ij} if i \neq j
+    L_{ij}(G) = -\sum_{v \neq j} e_{vj} if i = j.
+    
+    Parameters
+    ----------
+    edge_list : 1D array
+        list of each edge in the graph object G, each element is a tuple (source,sink)
+    
+    label_list : 1D array
+        list of edge labels in the graph
+        
+    node_list : 1D array
+        list of nodes in the graph
+    
+    Returns
+    -------
+    
+    L : num_nodes x num_nodes array
+        the Laplacian matrix of the graph G
+        
+    """
+    
+    num_nodes = len(node_list)
+    num_edges = len(edge_list)
+    
+    L = np.zeros(shape=(num_nodes,num_nodes),dtype=np.float128)
+    
+    # off-diagonal entries
+    for x in range(num_edges):
+        k = np.around(edge_list[x][0]-1,decimals=5)
+        j = np.around(edge_list[x][1]-1,decimals=5)
+
+        L[k,j] = label_list[x]
+    
+    # diagonal entries
+    sums = np.around(-1*np.sum(L,axis=0), decimals=5)
+
+    for i in range(num_nodes):
+        L[i,i] = sums[i]
+    
+    return L
+
+def steady_state_spectrum(L):
+    """
+    Calculates the steady-state distribution for the any linear framework graph by computing the eigenvector associated with eigenvalue 0.
+    
+    Parameters
+    ----------
+    L : num_nodes x num_nodes array
+        the Laplacian matrix of the graph G
+    
+    Returns
+    -------
+    pi : 1D array
+         the steady state distribution for a 3-vertex graph K.
+    
+    """
+    
+    eigvals, eigvecs = scipy.linalg.eig(L)
+    x = eigvecs[:,np.argmin(np.abs(eigvals))].real/sum(eigvecs[:,np.argmin(np.abs(eigvals))].real)
+    
+    pi_all = np.zeros((len(x)),dtype=np.float128)
+
+    for i in range(len(x)):
+        pi_all[i] = x[i]
+
+    return pi_all
+    
+## WORKING WITH CYCLES OF G ##
 
 def get_cycle_nodes(G_ud):
     """
@@ -232,9 +308,7 @@ def get_cycle_labels_edges(cycle_list,label_dict):
         
     return cycle_edges_forward, cycle_edges_backward, cycle_labels_forward, cycle_labels_backward
 
-###################################
 # Computing the cycle affinity (thermodynamic force)
-###################################
 
 def calculate_cycle_products(cycle_labels_forward,cycle_labels_backward):
     """
@@ -298,9 +372,7 @@ def calculate_affinities(affinities_f, affinities_b, cycle_list):
     
     return total_affinities
 
-###################################
 # Initialize a graph at thermodynamic equilibrium
-###################################
 
 def initial_equilibrium_parameters(cycle_list,cycle_edges_forward,cycle_labels_forward,cycle_labels_backward):
     """
@@ -351,100 +423,7 @@ def initial_equilibrium_parameters(cycle_list,cycle_edges_forward,cycle_labels_f
     
     return cycle_labels_forward, edge_tracker
 
-def reformat_labels(cycle_list, cycle_labels_forward, edge_tracker, label_dict, label_list):
-    """
-    Initializes a graph with a particular parameterization in an equilibrium steady state
-    
-    Parameters
-    ----------
-    
-    cycle_list : list of lists
-        each element is a list of the nodes connected in a given cycle.
-    
-    cycle_labels_forward : list of lists
-        updated with new values for certain edges
-        
-    edge_tracker : list of lists
-        list of edges with labels that were changed to initialize the system in an equilibrium steady state
-        
-    label_dict : dictionary
-        keys: edges in G represented as tuple (source,sink), values: edge labels
-        
-    label_list : 1D numpy array
-        list of edge labels in G
-    
-    Returns
-    -------
-    
-    label_dict : dictionary
-        keys: edges in G represented as tuple (source,sink), values: edge labels (updated with equilibrium changes)
-        
-    label_list : 1D numpy array
-        list of edge labels in G (updated with equilibrium changes
-    """
-    
-    num_cycles = len(cycle_list)
-    
-    for i in range(num_cycles):
-        label_dict[edge_tracker[i]] = cycle_labels_forward[i][0]
-        
-    label_list = np.fromiter(label_dict.values(), dtype=float)
-    
-    return label_dict, label_list
-
-###################################
-# Calculate the Laplacian matrix of linear framework graphs
-###################################
-
-def Laplacian_all(edge_list,label_list,node_list):
-    """
-    Calculates the Laplacian matrix for any graph. The entries of the Laplacian are computed using the following mathematical formula:
-    
-    L_{ij}(G) = e_{ij} if i \neq j
-    L_{ij}(G) = -\sum_{v \neq j} e_{vj} if i = j.
-    
-    Parameters
-    ----------
-    edge_list : 1D array
-        list of each edge in the graph object G, each element is a tuple (source,sink)
-    
-    label_list : 1D array
-        list of edge labels in the graph
-        
-    node_list : 1D array
-        list of nodes in the graph
-    
-    Returns
-    -------
-    
-    L : num_nodes x num_nodes array
-        the Laplacian matrix of the graph G
-        
-    """
-    
-    num_nodes = len(node_list)
-    num_edges = len(edge_list)
-    
-    L = np.zeros(shape=(num_nodes,num_nodes),dtype=np.float128)
-    
-    # off-diagonal entries
-    for x in range(num_edges):
-        k = np.around(edge_list[x][0]-1,decimals=5)
-        j = np.around(edge_list[x][1]-1,decimals=5)
-
-        L[k,j] = label_list[x]
-    
-    # diagonal entries
-    sums = np.around(-1*np.sum(L,axis=0), decimals=5)
-
-    for i in range(num_nodes):
-        L[i,i] = sums[i]
-    
-    return L
-
-###################################
 # Calculate the Steinberg signature from linear framework graphs
-###################################
 
 def make_observable(node_list):
     """
@@ -471,47 +450,54 @@ def make_observable(node_list):
     
     return f
 
-def autocorrelation_analytical(observable,L,tau_n,alpha=1,beta=3):
+def asymmetric_autocorrelation(signal,L,tau,pi,alpha=1,beta=3):
     """
-    Calculates the analytical solution for forward and reverse higher-order autocorrelation functions for a particular Laplacian matrix
+    Numerically calculates the asymmetric autocorrelation functions A^{1,3}(\tau) and A^{3,1}(\tau) for a particular Laplacian matrix. This function works for a linear framework graph of any size.
     
     Parameters
     ----------
-    observable : 1D array
-        possible values of observable (which is a state function on the Markov process)
+    signal : 1D array
+        vector of possible values of signal S = (S(1), ..., S(N))
+        
     L : NxN array
         column-based Laplacian matrix of linear framework graph with N vertices
-    tau_n : 1D array
-        range of intervals between values of observable taken by system
-    alpha : scalar
-        exponent applied to observable
-    beta : scalar
-        exponent applied to transpose of observable
+    
+    tau : 1D array
+        range of intervals between values of signal along integration interval
+        
+    pi : 1D array
+         the steady state distribution for a linear framework graph with N vertices
+    
+    alpha, beta : scalar
+        asymmetric exponents applied to signal (default: alpha=1, beta=3)
     
     Returns
     -------
-    t : 1D array
+    a_13 : 1D array
         forward autocorrelation function values
-    t_rev : 1D array
+    
+    a_31 : 1D array
         reverse autocorrelation function values
     
     """
-    f = np.array([observable],dtype=np.float128)
-    fstar = f.T
-    
-    # calculate the stationary distribution of the Markov process
-    eigvals, eigvecs = scipy.linalg.eig(L)
-    pi = np.array([eigvecs[:,np.argmin(np.abs(eigvals))].real/sum(eigvecs[:,np.argmin(np.abs(eigvals))].real)]).T
-    
     # initialize forward and reverse autocorrelation function arrays
-    t = np.zeros(len(tau_n),dtype=np.float128)
-    t_rev = np.zeros(len(tau_n),dtype=np.float128)
+    a_13 = np.zeros(len(tau),dtype=np.float128)
+    a_31 = np.zeros(len(tau),dtype=np.float128)
     
-    list_result = list(map(lambda i: scipy.linalg.expm(L*i), tau_n))
+    # define the signal vectors
+    # define the signal vectors
+    s_t = np.array([signal],dtype=np.float128) # row vector
+    s = s_t.T # column vector
+    
+    # create the diagonal steady state matrix 
+    delta_u_star = np.diag(pi)
+    
+    # vectorize the Laplacian matrix multiplied by each value in the vector tau
+    list_result = list(map(lambda i: scipy.linalg.expm(L*i), tau))
     
     # populate arrays with analytical solution to autocorrelation function
-    for i in range(len(tau_n)):
-        t[i] = f**alpha @ list_result[i] @(fstar ** beta * pi)
-        t_rev[i] = f**beta @ list_result[i] @(fstar ** alpha * pi)
+    for i in range(len(tau)):
+        a_13[i] = (s_t**beta @ list_result[i]) @ (delta_u_star @ s ** alpha)
+        a_31[i] = (s_t**alpha @ list_result[i]) @ (delta_u_star @ s ** beta)
         
-    return t, t_rev
+    return a_13, a_31

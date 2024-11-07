@@ -2,22 +2,21 @@ import networkx as nx
 import matplotlib.pyplot as plt
 import numpy as np
 import scipy.linalg
+from collections import Counter
 
 # general-graph-utils.py
 
-# This library allows the user to greate linear framework graphs (finite, simple, directed graphs with labeled edges). The user can randomly generate a strongly connected and reversible linear framework graph G, calculate its Laplacian matrix and its spectrum, and calculate the Steinberg signature from that matrix. The user can also determine how the Steinberg signature changes as a function of increasing entropy production. This software was developed using the NetworkX software package. For more information abpout NetworkX, see https://networkx.org/documentation/stable/index.html
+# This library allows the user to greate linear framework graphs (finite, directed graphs with no self-loops and labeled edges). The user can randomly generate a strongly connected and fully reversible linear framework graph G, calculate its Laplacian matrix and its spectrum, and calculate the Steinberg signature from that matrix. The user can also determine how the Steinberg signature changes as a function of increasing entropy production. This software was developed using the NetworkX software package (https://networkx.org/documentation/stable/index.html)
 
-# Note that the user is required to create both a directed graph object and an undirected graph object. This is because some of the functions in this file require the undirected graph object as an argument (particular the cycle-related functions). For the most part, however, the user can use a directed graph object.
-
-## RANDOM GENERATION OF LINEAR FRAMEWORK GRAPHS ##
+# Note that the user is required to create both a directed graph object and an undirected graph object. This is because some of the functions in this file require the undirected graph object as an argument (particular the cycle-related functions).
 
 def random_graph(n):
     """
-    Generates a linear framework graph -- a finite, simple directed graph -- with a random structure (with the conditions that it is strongly connected and fully reversible). The size of the graph is randomly determined from range (3, n). Reversible edges are assigned between randomly chosen pairs of nodes until the graph is strongly connected.
+    Generates a linear framework graph that is strongly connected and fully reversible. The size of the graph is randomly determined from range (3, n), and the edges are added by randomly selecting a pair of nodes in G.
     
     Parameters
     ----------
-    n : integer
+    n : integer > 3
         the maximum number of vertices
     
     Returns
@@ -56,31 +55,112 @@ def random_graph(n):
     
     return G, G_ud
 
-## OBTAINING STRUCTURAL INFORMATION FROM G ##
-
-
+def random_graph_n(n):
+    """
+    Generates a linear framework graph of size n that is strongly connected and fully reversible.
+    
+    Parameters
+    ----------
+    n : integer
+        the size of the graph
+    
+    Returns
+    -------
+    G : NetworkX DiGraph object
+        directed graph
+    
+    G_ud : NetworkX Graph object
+        undirected graph
+    """
+    
+    G = nx.DiGraph()
+    G_ud = nx.Graph()
+    
+    # determine the number of nodes in G
+    G_size = n
+    
+    # add nodes to G and G_ud
+    nodes = np.arange(1,G_size+1,step=1)
+    G.add_nodes_from(nodes)
+    G_ud.add_nodes_from(nodes)
+    
+    # add edges until the graph is strongly connected
+    while nx.is_strongly_connected(G) == False:
+        u, v = np.random.choice(nodes, size=2,replace=False)
+        G.add_edge(u,v)
+        G_ud.add_edge(u,v)
+    
+    # add edges such that the graph is fully reversible
+    for edge in G.edges:
+        u = edge[0]
+        v = edge[1]
+        if G.has_edge(v,u) == False:
+            G.add_edge(v,u)
+            G_ud.add_edge(v,u)
+    
+    return G, G_ud
 
 def get_nodes(G):
     """
     Returns an array of nodes in a NetworkX graph object (directed or undirected)
+    
+    Parameters
+    ----------
+    G : NetworkX DiGraph object
+        directed graph
+    
+    Returns
+    -------
+    node_list : NumPy array
+        list of nodes
     """
-    return np.array(G.nodes)
+    node_list = np.array(G.nodes)
+    return node_list
 
 def get_edges(G):
     """
     Returns an array of edges in a NetworkX graph object (directed). Each edge is represented as a list [source,sink]
+        
+    Parameters
+    ----------
+    G : NetworkX DiGraph object
+        directed graph
     
-    Note: works for undirected graph, but if given a choice, better to use a directed graph
+    Returns
+    -------
+    edge_list : NumPy array
+        list of lists of directed edges (each directed edge is represented as a list)
     """
-    return np.array(G.edges)
+    edge_list = np.array(G.edges)
+    return edge_list
 
-def get_labels(G):
+def get_cycles(G_ud):
     """
-    Extracts the label information for each edge in a NetworkX graph object. If G not labeled, labels are sampled as 10^x, where x is sampled uniformly between -3 and 3. This function works for undirected graph, but if given a choice, better to use a directed graph
+    Returns a list of the cycles which form a basis G (must be undirected). Each element is a list of the nodes connected in a given cycle.
     
     Parameters
     ----------
-    G : NetworkX graph object (directed)
+    G_ud : NetworkX Graph object
+        undirected graph
+            
+    Returns
+    -------
+    cycle_list : list of lists
+        each element is a list of the nodes connected in a given cycle.
+    """
+    
+    cycle_list = [c for c in nx.cycle_basis(G_ud)]
+    
+    return cycle_list
+
+def get_labels(G):
+    """
+    Extracts the label information for each edge in a NetworkX graph object. If G not labeled, labels are sampled as 10^x, where x is sampled uniformly between -3 and 3.
+    
+    Parameters
+    ----------
+    G : NetworkX DiGraph object
+        directed graph
             
     Returns
     -------
@@ -94,21 +174,305 @@ def get_labels(G):
     
     label_dict = {}
     
+    # if G weighted/labeled, extract weight information in dictionary form
     if nx.is_weighted(G)==True:
         for i in range(len(G.edges())):
             label_dict[list(G.edges())[i]] = G.get_edge_data(list(G.edges)[i][0],list(G.edges)[i][1])['weight']
-        
+    
+    # if G not weighted/labeled, sample new edge label for each edge
     elif nx.is_weighted(G)==False:
         label_dict = {e: np.around(10**(np.random.uniform(-3,3, size = 1)[0]),decimals=5) for e in G.edges}
-        
+    
+    # create a list of edge labels directly from the dictionary
     label_list = np.fromiter(label_dict.values(), dtype=float)
     
     return label_dict, label_list
 
-
-def reformat_labels(cycle_list, cycle_labels_forward, edge_tracker, label_dict, label_list):
+def get_labels_ones(G):
     """
-    Initializes a graph with a particular parameterization in an equilibrium steady state
+    Extracts the label information for each edge in a NetworkX graph object. If G not labeled, all labels are assigned as 1.0.
+    
+    Parameters
+    ----------
+    G : NetworkX DiGraph object
+        directed graph
+            
+    Returns
+    -------
+    label_dict : dictionary
+        keys: edges in G represented as tuple (source,sink), values: edge labels
+        
+    label_list : 1D numpy array
+        list of edge labels in G
+        
+    """
+    
+    label_dict = {}
+    
+    # if G weighted/labeled, extract weight information in dictionary form
+    if nx.is_weighted(G)==True:
+        for i in range(len(G.edges())):
+            label_dict[list(G.edges())[i]] = G.get_edge_data(list(G.edges)[i][0],list(G.edges)[i][1])['weight']
+    
+    # if G not weighted/labeled, sample new edge label for each edge
+    elif nx.is_weighted(G)==False:
+        label_dict = {e: 1.0 for e in G.edges}
+    
+    # create a list of edge labels directly from the dictionary
+    label_list = np.fromiter(label_dict.values(), dtype=float)
+    
+    return label_dict, label_list
+
+def get_cycle_labels_edges(cycle_list,label_dict):
+    """
+    Compartmentalizes, for each cycle, the edges involved and their respective edge labels into separate data structures.
+    
+    Parameters
+    ----------    
+    cycle_list : list of lists
+        each element is a list of the nodes connected in a given cycle.
+        
+    label_dict : dictionary
+        keys: edges in G represented as tuple (source,sink), values: edge labels
+        
+    Returns
+    -------
+    cycle_edges_forward : list of lists
+        each element is a list of the edges going around one direction of a given cycle
+    
+    cycle_edges_backward : list of lists
+        each element is a list of the edges going around the opposite direction of a given cycle
+    
+    cycle_labels_forward : list of lists
+        each element is a list of the labels going around one direction of a given cycle
+    
+    cycle_labels_backward : list of lists
+        each element is a list of the labels going around the opposite direction of a given cycle
+        
+    """
+    
+    # define number of cycles
+    num_cycles = len(cycle_list)
+    
+    # define arrays for edges in each direction
+    cycle_edges_forward = [[] for i in range(num_cycles)]
+    cycle_edges_backward = [[] for i in range(num_cycles)]
+    
+    # define arrays for labels in each direction
+    cycle_labels_forward = [[] for i in range(num_cycles)]
+    cycle_labels_backward = [[] for i in range(num_cycles)]
+
+    # iterate over each cycle
+    for j in range(num_cycles):
+        
+        # for each node in the cycle
+        for i in range(1,len(cycle_list[j])):
+            
+            # identify what it is connected to
+            source = cycle_list[j][i-1]
+            sink = cycle_list[j][i]
+            
+            # edge (source,sink) and accompanying labels
+            cycle_labels_forward[j].append(label_dict.get((source,sink)))
+            cycle_edges_forward[j].append((source,sink))
+            
+            #edge (sink, source) and accompanying labels
+            cycle_labels_backward[j].append(label_dict.get((sink,source)))
+            cycle_edges_backward[j].append((sink,source))
+        
+        # account for the connection between the last and first elements of each cycle list
+        final_source = cycle_list[j][-1]
+        final_sink = cycle_list[j][0]
+
+        # edge (final_source, final_sink) and accompanying labels
+        cycle_labels_forward[j].append(label_dict.get((final_source,final_sink)))
+        cycle_edges_forward[j].append((final_source,final_sink))
+        
+        # edge (final_sink, final source) and accompanying labels
+        cycle_labels_backward[j].append(label_dict.get((final_sink,final_source)))
+        cycle_edges_backward[j].append((final_sink,final_source))
+        
+    return cycle_edges_forward, cycle_edges_backward, cycle_labels_forward, cycle_labels_backward
+
+def calculate_cycle_products(cycle_labels_forward,cycle_labels_backward):
+    """
+    Calculates the product of edge labels going in forward and reverse directions for each cycle
+    
+    Parameters
+    ----------
+    cycle_labels_forward : list of lists
+        each element is a list of the labels going around one direction of a given cycle
+    
+    cycle_labels_backward : list of lists
+        each element is a list of the labels going around the opposite direction of a given cycle
+        
+    Returns
+    -------
+    products_f : 1D array
+        each element is the product of labels corresponding to the forward traversal of each cycle
+    
+    products_b : 1D array
+        each element is the product of labels corresponding to the backward traversal of each cycle
+        
+    """
+    products_f = np.zeros(len(cycle_labels_forward),dtype=np.float128)
+    products_b = np.zeros(len(cycle_labels_backward),dtype=np.float128)
+
+    for i in range(len(cycle_labels_forward)):
+        products_f[i] = np.prod(cycle_labels_forward[i])
+        products_b[i] = np.prod(cycle_labels_backward[i])
+    
+    return products_f, products_b
+
+def calculate_affinities(products_f, products_b, cycle_list):
+    """
+    Calculates the cycle affinity (e.g. thermodynamic force) for each cycle in a graph
+    
+    Parameters
+    ----------
+    products_f : 1D array
+        each element is the product of labels corresponding to the forward traversal of each cycle
+    
+    products_b : 1D array
+        each element is the product of labels corresponding to the backward traversal of each cycle
+        
+    cycle_list : list of lists
+        each element is a list of the nodes connected in a given cycle.
+        
+    Returns
+    -------
+    
+    total_affinities : 1D array
+        each element is the thermodynamic force for each cycle in the graph, corresponding to their order in cycle_list
+    
+    """
+    
+    num_cycles = len(cycle_list)
+    
+    total_affinities = np.zeros(num_cycles,dtype=np.float128)
+    
+    for i in range(num_cycles):
+        total_affinities[i] = np.log(products_f[i]/products_b[i])
+    
+    return total_affinities
+
+def shared_edges_cycles(cycle_list, cycle_edges_forward, cycle_edges_backward):
+    """
+    Returns a list of all edges that are mutual to more than one cycle in G
+    
+    Parameters
+    ----------
+    cycle_list : list of lists
+        each element is a list of the nodes connected in a given cycle.
+        
+    cycle_edges_forward : list of lists
+        each element is a list of the edges going around one direction of a given cycle
+    
+    cycle_edges_backward : list of lists
+        each element is a list of the edges going around the opposite direction of a given cycle
+        
+    Returns
+    ----------
+    shared_cycle_edges_list : list
+        list of all the pairs of reversible edges that are shared between at least 2 cycles in G
+    
+    all_cycle_edges_forward : list
+        list of all the edge tuples that are recorded in cycle_edges_forward
+    
+    """
+    all_cycle_edges = []
+    all_cycle_edges_forward = []
+
+    for i in range(len(cycle_list)):
+        for j in range(len(cycle_list[i])):
+            all_cycle_edges.append(cycle_edges_forward[i][j])
+            all_cycle_edges.append(cycle_edges_backward[i][j])
+            all_cycle_edges_forward.append(cycle_edges_forward[i][j])
+    
+    shared_cycle_edges_dict = Counter(all_cycle_edges)
+    
+    shared_cycle_edges_list = [edge for edge, count in shared_cycle_edges_dict.items() if count >= 2]
+    
+    return shared_cycle_edges_list,all_cycle_edges_forward
+
+def equilibrium_params_2(cycle_list,cycle_edges_forward,shared_cycle_edges_list,all_cycle_edges_forward,cycle_labels_forward,products_f,products_b):
+    """
+    Calculates the cycle affinity (e.g. thermodynamic force) for each cycle in a graph
+    
+    Parameters
+    ----------
+    cycle_list : list of lists
+        each element is a list of the nodes connected in a given cycle.
+        
+    cycle_edges_forward : list of lists
+        each element is a list of the edges going around one direction of a given cycle
+    
+    shared_cycle_edges_list : list
+        list of all the pairs of reversible edges that are shared between at least 2 cycles in G
+    
+    all_cycle_edges_forward : list
+        list of all the edge tuples that are recorded in cycle_edges_forward
+        
+    cycle_labels_forward : list of lists
+        each element is a list of the labels going around one direction of a given cycle
+    
+    products_f : 1D array
+        each element is the product of labels corresponding to the forward traversal of each cycle
+    
+    products_b : 1D array
+        each element is the product of labels corresponding to the backward traversal of each cycle
+        
+    Returns
+    -------
+    
+    cycle_labels_forward : list of lists
+        updated cycle_labels_forward with new edge labels
+        
+    edge_tracker: list
+        list of edges with altered labels
+        
+    index_tracker: list
+        list of second indices of altered edges in cycle_labels_forward
+    
+    """
+    num_cycles = len(cycle_list)
+    # tracking edges that have had their values altered
+    edge_tracker = []
+    index_tracker = []
+    # count the cycles that have been initialized at equilibrium
+    cycles_done = -1
+    
+    # remove all shared edges from cycle_edges_forward
+    a = set(all_cycle_edges_forward)
+    b = set(shared_cycle_edges_list)
+    new_cycle_edges_forward = list(a.difference(b))        
+    
+    for i in range(num_cycles):
+        
+        while cycles_done < i:
+            # choose a random edge in the "forward" direction
+            j = np.random.randint(len(cycle_list[i]),size=1)[0]
+            edge = cycle_edges_forward[i][j]
+            edge_label = cycle_labels_forward[i][j]
+            
+            # if the edge is not shared with other cycles, recalculate its value
+            if ((edge in new_cycle_edges_forward)==True):
+                #print(j)
+                # recalculate edge label using the cycle condition
+                edge_label = 1/(products_f[i]/(edge_label*products_b[i]))
+                cycle_labels_forward[i][j] = edge_label
+                # add that edge to edge_tracker
+                edge_tracker.append(cycle_edges_forward[i][j])
+                index_tracker.append(j)
+                cycles_done += 1
+            else:
+                continue
+            
+    return cycle_labels_forward, edge_tracker, index_tracker
+
+def reformat_labels(cycle_list, cycle_edges_forward, cycle_labels_forward, edge_tracker, index_tracker, label_dict, label_list):
+    """
+    Changes the parameterization of a NetworkX graph object from its initial parameterization
     
     Parameters
     ----------
@@ -116,11 +480,17 @@ def reformat_labels(cycle_list, cycle_labels_forward, edge_tracker, label_dict, 
     cycle_list : list of lists
         each element is a list of the nodes connected in a given cycle.
     
+    cycle_edges_forward : list of lists
+        each element is a list of the edges going around one direction of a given cycle
+    
     cycle_labels_forward : list of lists
         updated with new values for certain edges
         
     edge_tracker : list of lists
         list of edges with labels that were changed to initialize the system in an equilibrium steady state
+    
+    index_tracker: list
+        list of second indices of altered edges in cycle_labels_forward
         
     label_dict : dictionary
         keys: edges in G represented as tuple (source,sink), values: edge labels
@@ -132,26 +502,25 @@ def reformat_labels(cycle_list, cycle_labels_forward, edge_tracker, label_dict, 
     -------
     
     label_dict : dictionary
-        keys: edges in G represented as tuple (source,sink), values: edge labels (updated with equilibrium changes)
+        keys: edges in G represented as tuple (source,sink), values: edge labels (updated)
         
     label_list : 1D numpy array
-        list of edge labels in G (updated with equilibrium changes
+        list of edge labels in G (updated)
     """
     
     num_cycles = len(cycle_list)
     
     for i in range(num_cycles):
-        label_dict[edge_tracker[i]] = cycle_labels_forward[i][0]
+        #print(cycle_edges_forward[i][index_tracker[i]])
+        label_dict[edge_tracker[i]] = cycle_labels_forward[i][index_tracker[i]]
         
     label_list = np.fromiter(label_dict.values(), dtype=float)
     
     return label_dict, label_list
 
-# CALCULATING THE LAPLACIAN ##
-
 def Laplacian_all(edge_list,label_list,node_list):
     """
-    Calculates the Laplacian matrix for any graph. The entries of the Laplacian are computed using the following mathematical formula:
+    Calculates the column-based Laplacian matrix for any graph. The entries of the Laplacian are computed using the following mathematical formula:
     
     L_{ij}(G) = e_{ij} if i \neq j
     L_{ij}(G) = -\sum_{v \neq j} e_{vj} if i = j.
@@ -197,7 +566,7 @@ def Laplacian_all(edge_list,label_list,node_list):
 
 def steady_state_spectrum(L):
     """
-    Calculates the steady-state distribution for the any linear framework graph by computing the eigenvector associated with eigenvalue 0.
+    Calculates the steady-state distribution for the any linear framework graph by computing the right eigenvector associated with eigenvalue 0 and normalizing it by the sum of all entries
     
     Parameters
     ----------
@@ -212,220 +581,45 @@ def steady_state_spectrum(L):
     """
     
     eigvals, eigvecs = scipy.linalg.eig(L)
-    x = eigvecs[:,np.argmin(np.abs(eigvals))].real/sum(eigvecs[:,np.argmin(np.abs(eigvals))].real)
+    pi_all = eigvecs[:,np.argmin(np.abs(eigvals))].real/sum(eigvecs[:,np.argmin(np.abs(eigvals))].real)
     
-    pi_all = np.zeros((len(x)),dtype=np.float128)
-
-    for i in range(len(x)):
-        pi_all[i] = x[i]
-
     return pi_all
-    
-## WORKING WITH CYCLES OF G ##
 
-def get_cycle_nodes(G_ud):
+def G_duplicate_data_structures(G,node_list,edge_list,label_list,label_dict,size,L):
     """
-    Returns a list of the cycles which form a basis G (must be undirected). Each element is a list of the nodes connected in a given cycle.
+    Creates new data structures for a graph G, in case you want to manipulate a graph's topology
+    """
+    
+    node_list_G = node_list
+    edge_list_G = edge_list
+    label_list_G = label_list
+    label_dict_G = label_dict
+    size_G = size
+    L_G = L
+    
+    return node_list_G, edge_list_G, label_list_G, label_dict_G, size_G, L_G
+
+def assign_labels(G, label_dict):
+    """
+    Adds labels to a graph object
     
     Parameters
     ----------
-    G_ud : NetworkX graph object (undirected)
-            
-    Returns
-    -------
-    cycle_list : list of lists
-        each element is a list of the nodes connected in a given cycle.
-    """
+    G : NetworkX graph object (directed)
     
-    cycle_list = [c for c in nx.cycle_basis(G_ud)]
-    
-    return cycle_list
-
-def get_cycle_labels_edges(cycle_list,label_dict):
-    """
-    Extracts, for each cycle, the edges involved and their respective edge labels.
-    
-    Parameters
-    ----------    
-    cycle_list : list of lists
-        each element is a list of the nodes connected in a given cycle.
-        
     label_dict : dictionary
         keys: edges in G represented as tuple (source,sink), values: edge labels
         
     Returns
     -------
-    cycle_edges_forward : list of lists
-        each element is a list of the edges going around one direction of a given cycle
     
-    cycle_edges_backward : list of lists
-        each element is a list of the edges going around the opposite direction of a given cycle
-    
-    cycle_labels_forward : list of lists
-        each element is a list of the labels going around one direction of a given cycle
-    
-    cycle_labels_backward : list of lists
-        each element is a list of the labels going around the opposite direction of a given cycle
+    G : with labels
         
     """
-    
-    # define number of cycles
-    num_cycles = len(cycle_list)
-    
-    # define arrays for edges in each direction
-    cycle_edges_forward = [[] for i in range(num_cycles)]
-    cycle_edges_backward = [[] for i in range(num_cycles)]
-    
-    # define arrays for labels in each direction
-    cycle_labels_forward = [[] for i in range(num_cycles)]
-    cycle_labels_backward = [[] for i in range(num_cycles)]
-
-    # iterate over each cycle
-    for j in range(num_cycles):
+    for e in G.edges:
+        G[e[0]][e[1]]['weight'] = label_dict[e]
         
-        for i in range(1,len(cycle_list[j])):
-            
-            source = cycle_list[j][i-1]
-            sink = cycle_list[j][i]
-            
-            # edge (source,sink) and accompanying labels
-            cycle_labels_forward[j].append(label_dict.get((source,sink)))
-            cycle_edges_forward[j].append((source,sink))
-            
-            #edge (sink, source) and accompanying labels
-            cycle_labels_backward[j].append(label_dict.get((sink,source)))
-            cycle_edges_backward[j].append((sink,source))
-        
-        # account for the connection between the last and first elements of each cycle list
-        final_source = cycle_list[j][-1]
-        final_sink = cycle_list[j][0]
-
-        # edge (final_source, final_sink) and accompanying labels
-        cycle_labels_forward[j].append(label_dict.get((final_source,final_sink)))
-        cycle_edges_forward[j].append((final_source,final_sink))
-        
-        # edge (final_sink, final source) and accompanying labels
-        cycle_labels_backward[j].append(label_dict.get((final_sink,final_source)))
-        cycle_edges_backward[j].append((final_sink,final_source))
-        
-    return cycle_edges_forward, cycle_edges_backward, cycle_labels_forward, cycle_labels_backward
-
-# Computing the cycle affinity (thermodynamic force)
-
-def calculate_cycle_products(cycle_labels_forward,cycle_labels_backward):
-    """
-    Calculates the product of edge labels going in forward and reverse directions for each cycle
-    
-    Parameters
-    ----------
-    cycle_labels_forward : list of lists
-        each element is a list of the labels going around one direction of a given cycle
-    
-    cycle_labels_backward : list of lists
-        each element is a list of the labels going around the opposite direction of a given cycle
-        
-    Returns
-    -------
-    products_f : 1D array
-        each element is the product of labels corresponding to the forward traversal of each cycle
-    
-    products_b : 1D array
-        each element is the product of labels corresponding to the backward traversal of each cycle
-        
-    """
-    products_f = np.zeros(len(cycle_labels_forward),dtype=np.float128)
-    products_b = np.zeros(len(cycle_labels_backward),dtype=np.float128)
-
-    for i in range(len(cycle_labels_forward)):
-        products_f[i] = np.prod(cycle_labels_forward[i])
-        products_b[i] = np.prod(cycle_labels_backward[i])
-    
-    return products_f, products_b
-
-def calculate_affinities(affinities_f, affinities_b, cycle_list):
-    """
-    Calculates the cycle affinity (e.g. thermodynamic force) for each cycle in a graph
-    
-    Parameters
-    ----------
-    affinities_f : 1D array
-        each element is the product of labels corresponding to the forward traversal of each cycle
-    
-    affinities_b : 1D array
-        each element is the product of labels corresponding to the backward traversal of each cycle
-        
-    cycle_list : list of lists
-        each element is a list of the nodes connected in a given cycle.
-        
-    Returns
-    -------
-    
-    total_affinities : 1D array
-        each element is the thermodynamic force for each cycle in the graph, corresponding to their order in cycle_list
-    
-    """
-    
-    num_cycles = len(cycle_list)
-    
-    total_affinities = np.zeros(num_cycles,dtype=np.float128)
-    
-    for i in range(num_cycles):
-        total_affinities[i] = np.log(affinities_f[i]/affinities_b[i])
-    
-    return total_affinities
-
-# Initialize a graph at thermodynamic equilibrium
-
-def initial_equilibrium_parameters(cycle_list,cycle_edges_forward,cycle_labels_forward,cycle_labels_backward):
-    """
-    Initializes a graph with a particular parameterization in an equilibrium steady state
-    
-    Parameters
-    ----------
-    cycle_list : list of lists
-        each element is a list of the nodes connected in a given cycle.
-
-    cycle_edges_forward : list of lists
-        each element is a list of the edges going around one direction of a given cycle
-
-    cycle_labels_forward : list of lists
-        each element is a list of the labels going around one direction of a given cycle
-    
-    cycle_labels_backward : list of lists
-        each element is a list of the labels going around the opposite direction of a given cycle
-
-    Returns
-    -------
-    
-    cycle_labels_forward : list of lists
-        updated with new values for certain edges
-        
-    edge_tracker : list of lists
-        list of edges with labels that were changed to initialize the system in an equilibrium steady state
-    
-    """
-    
-    num_cycles = len(cycle_list)
-    edge_tracker = []
-    
-    # for each cycle in cycle_list
-    for i in range(num_cycles):
-        for j in range(len(cycle_list[i])):
-            
-            # if the edge is already in edge_tracker, move on
-            if cycle_edges_forward[i][j] in edge_tracker:
-                pass
-            
-            # otherwise, change the value of one edge in the cycle such that the cycle affinity is 0
-            else:
-                cycle_labels_forward[i][j] = 1/(np.prod(cycle_labels_forward[i])/(cycle_labels_forward[i][j]*np.prod(cycle_labels_backward[i])))
-                
-                # add that edge to edge_tracker
-                edge_tracker.append(cycle_edges_forward[i][j])
-    
-    return cycle_labels_forward, edge_tracker
-
-# Calculate the Steinberg signature from linear framework graphs
+    return G
 
 def make_observable(node_list):
     """
